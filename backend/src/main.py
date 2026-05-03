@@ -734,8 +734,41 @@ async def _fail_run(orb: Orb, error: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+SEED_ORBS: list[tuple[str, AgentType]] = [
+    ("chat", "chat"),
+    ("code", "code"),
+    ("research", "research"),
+    ("computer", "computer"),
+    ("voice", "voice"),
+    # 'memory' is a chat-typed orb with a personal-data flavor — same
+    # surface as chat for now; toolset comes later.
+    ("memory", "chat"),
+]
+
+
+def _seed_ring_orbs() -> None:
+    """If the in-memory store is empty (first launch / restart), seed
+    the typed ring orbs per `RING_ORB_SPECIALIZATION` (mapped here
+    from the spec). Each seeded orb is a root with its specialization
+    `agent_type`. The frontend's `agentTypes.ts` registry handles the
+    visual side (color, label) using only the type literal."""
+    if orbs:
+        return
+    for display_name, agent_type in SEED_ORBS:
+        orb = Orb(
+            id=_new_id(),
+            parent_id=None,
+            kind="orb",
+            display_name=display_name,
+            agent_type=agent_type,
+        )
+        orbs[orb.id] = orb
+        messages_by_orb[orb.id] = []
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _seed_ring_orbs()
     yield
     # nothing to do on shutdown for v0
 

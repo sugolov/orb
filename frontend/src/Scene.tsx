@@ -12,6 +12,7 @@ import { Html } from '@react-three/drei';
 import { MutableRefObject, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { Orb } from './api';
+import { AGENT_TYPES } from './agentTypes';
 import { orbVert, orbFrag } from './orbShader';
 
 // ---------------------------------------------------------------------------
@@ -99,14 +100,27 @@ function smoothstep(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-const PURPLE = new THREE.Color(0xa78bfa);
-const WHITE = new THREE.Color(0xffffff);
+// per-agent-type color is read from the AGENT_TYPES registry. We cache
+// THREE.Color instances keyed by hex int so we don't allocate every
+// render frame. RED is the only globally-shared color (failure state).
 const RED = new THREE.Color(0xff6b6b);
+const colorCache = new Map<number, THREE.Color>();
+function colorFor(hex: number): THREE.Color {
+  let c = colorCache.get(hex);
+  if (!c) {
+    c = new THREE.Color(hex);
+    colorCache.set(hex, c);
+  }
+  return c;
+}
 
 function targetColor(orb: Orb): THREE.Color {
-  if (orb.status === 'working') return PURPLE;
   if (orb.status === 'failed') return RED;
-  return WHITE;
+  const def = AGENT_TYPES[orb.agent_type ?? 'chat'];
+  if (orb.status === 'working' && def.workingColor !== undefined) {
+    return colorFor(def.workingColor);
+  }
+  return colorFor(def.color);
 }
 
 /** Visibility target [0, 1] given an orb's role and the current viewT. */
