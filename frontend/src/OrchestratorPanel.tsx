@@ -11,7 +11,7 @@
 //   5. Add a case to the switch below.
 // TypeScript's exhaustive-switch warning will catch a missed case.
 
-import type { MemoryItem, Message, Orb } from './api';
+import type { MemoryItem, Message, Orb, RunEvent } from './api';
 import type { ScreenPos } from './Scene';
 import type { Phase } from './App';
 import { ChatOrchestrator } from './orchestrators/ChatOrchestrator';
@@ -30,6 +30,11 @@ export interface OrchestratorProps {
   messages: Message[];
   orbsById: Map<string, Orb>;
   streams: Map<string, string>;
+  /** Structured run events keyed by orb id (tool_use / tool_result /
+   *  error / done). Reset on `thinking`. Used by terminal-style
+   *  surfaces (CodeOrchestrator) to render the agent's actions
+   *  without re-parsing the textual stream. */
+  runEvents: Map<string, RunEvent[]>;
   memory: Map<string, MemoryItem[]>;
   transitionOrigin: ScreenPos;
   phase: Phase;

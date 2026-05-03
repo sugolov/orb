@@ -15,6 +15,7 @@ import {
   type MemoryItem,
   type Message,
   type Orb,
+  type RunEvent,
   type ServerEvent,
 } from './api';
 import { OrbChart } from './OrbChart';
@@ -93,6 +94,11 @@ export function App() {
   const [orbs, setOrbs] = useState<Map<string, Orb>>(new Map());
   const [messages, setMessages] = useState<Map<string, Message[]>>(new Map());
   const [streams, setStreams] = useState<Map<string, string>>(new Map());
+  // Structured run events per orb id — tool_use, tool_result, error,
+  // done. Used by the CodeOrchestrator (and any future surface that
+  // wants to render the agent's actions as a terminal log) so they
+  // don't have to re-parse the textual stream. Reset on `thinking`.
+  const [runEvents, setRunEvents] = useState<Map<string, RunEvent[]>>(new Map());
   // memory by orb id — own items live here. Inherited items are
   // computed by walking parent_id at render time, so we don't store
   // them separately.
@@ -203,6 +209,11 @@ export function App() {
         next.delete(ev.id);
         return next;
       });
+      setRunEvents((prev) => {
+        const next = new Map(prev);
+        next.delete(ev.id);
+        return next;
+      });
       setMemory((prev) => {
         const next = new Map(prev);
         next.delete(ev.id);
@@ -231,13 +242,18 @@ export function App() {
       return;
     }
     if (ev.type === 'run_event') {
-      // `thinking` resets the per-orb stream buffer so a re-run (e.g.
-      // continued chat with a suborb) doesn't show stale text from the
-      // previous run while waiting for the first new chunk.
+      // `thinking` resets the per-orb stream buffer + structured event
+      // log so a re-run (continued chat) doesn't show stale state
+      // while waiting for the first new chunk.
       if (ev.event.kind === 'thinking') {
         setStreams((prev) => {
           const next = new Map(prev);
           next.set(ev.orb_id, '');
+          return next;
+        });
+        setRunEvents((prev) => {
+          const next = new Map(prev);
+          next.set(ev.orb_id, []);
           return next;
         });
         return;
@@ -250,6 +266,53 @@ export function App() {
           next.set(ev.orb_id, cur + text);
           return next;
         });
+      }
+      // Structured events (tool_use / tool_result / error / done) are
+      // accumulated separately. The CodeOrchestrator (Task 6) renders
+      // them in a terminal-style log; the chat-window stream view also
+      // surfaces a textual placeholder so chat orbs that use tools
+      // still show *something* without the structured renderer.
+      if (
+        ev.event.kind === 'tool_use' ||
+        ev.event.kind === 'tool_result' ||
+        ev.event.kind === 'error' ||
+        ev.event.kind === 'done'
+      ) {
+        setRunEvents((prev) => {
+          const next = new Map(prev);
+          const arr = next.get(ev.orb_id) || [];
+          next.set(ev.orb_id, [...arr, ev.event]);
+          return next;
+        });
+        // mirror as a small text annotation in the running stream
+        // so chat-style surfaces still see SOMETHING happening when
+        // tool calls fire.
+        if (ev.event.kind === 'tool_use') {
+          const inputRepr = ev.event.input
+            ? JSON.stringify(ev.event.input).slice(0, 200)
+            : '';
+          const line = `\n[tool: ${ev.event.name ?? '?'}(${inputRepr})]\n`;
+          setStreams((prev) => {
+            const next = new Map(prev);
+            const cur = next.get(ev.orb_id) || '';
+            next.set(ev.orb_id, cur + line);
+            return next;
+          });
+        } else if (ev.event.kind === 'tool_result') {
+          let repr = '';
+          try {
+            repr = JSON.stringify(ev.event.output).slice(0, 240);
+          } catch {
+            repr = String(ev.event.output).slice(0, 240);
+          }
+          const line = `[result: ${repr}]\n`;
+          setStreams((prev) => {
+            const next = new Map(prev);
+            const cur = next.get(ev.orb_id) || '';
+            next.set(ev.orb_id, cur + line);
+            return next;
+          });
+        }
       }
       return;
     }
@@ -642,6 +705,7 @@ export function App() {
           messages={currentMessages}
           orbsById={orbs}
           streams={streams}
+          runEvents={runEvents}
           memory={memory}
           transitionOrigin={transitionOrigin}
           phase={phase}
