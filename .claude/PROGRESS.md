@@ -26,6 +26,19 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 2 — typed ring orbs + per-type color ✓
+
+- Backend `_seed_ring_orbs()` runs at lifespan startup; seeds the six
+  typed ring orbs (chat / code / research / computer / voice / memory)
+  if the store is empty.
+- `Scene.OrbMesh.targetColor` now reads `AGENT_TYPES[orb.agent_type]`
+  for both base and working colors. Hex→THREE.Color cache avoids
+  per-frame allocations.
+- Visual: ring shows 6 distinctly colored orbs. Click on a non-chat
+  orb still opens the chat surface (stub fallthrough) — per the spec
+  this is the intended Task-2 end state.
+- Trace: works for all six orbs.
+
 ### Task 1 — pluggable orchestrator surface + agent_type ✓
 
 - Backend: `AgentType` literal added; `Orb`/`CreateOrb`/`PatchOrb` carry

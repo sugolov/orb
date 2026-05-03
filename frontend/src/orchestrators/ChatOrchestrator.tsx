@@ -1,15 +1,21 @@
-// Chat orchestrator surface. The original (and currently only fully
-// implemented) orchestrator — three-column layout: Memory left, Chat
-// center, sub-orbs visualized in the chat as pills. Header has Back,
-// breadcrumb, status, merge/promote, and a destructive ✕.
+// Chat orchestrator surface — the dispatcher.
 //
-// Per the dispatcher reframe (Task 3 in overnight.md) this surface
-// will lose the agent-side "I'm watching the X orb" replies in favor
-// of a "recent dispatches" log; that change is its own task.
+// IMPORTANT: this surface is no longer a "chat" in the conversational
+// sense. The orchestrator does not reply to the user. Its center
+// column is a DISPATCH LOG: a chronological list of cards, one per
+// suborb spawned at this level. Each card shows the prompt that
+// spawned it + the suborb's status. Click a card → opens that
+// suborb's floating chat window (where the actual conversation lives).
+//
+// Layout: three columns — Memory left, Dispatch log center, Sub-orbs
+// visualization right (currently merged into the chat list; broken
+// out fully in a follow-up). Bottom: a "dispatch a task…" input that
+// will gain a per-dispatch agent-backend selector in Task 4.
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
-import type { MemoryItem, Orb } from '../api';
+import type { MemoryItem, Message, Orb, OrbStatus } from '../api';
 import { sendMessage } from '../api';
+import { agentTypeOf } from '../agentTypes';
 import type { OrchestratorProps } from '../OrchestratorPanel';
 
 function breadcrumb(orb: Orb, orbsById: Map<string, Orb>): Orb[] {
@@ -130,6 +136,46 @@ export function ChatOrchestrator({
   const isSuborb = orb.parent_id !== null;
   const canMerge = isSuborb && orb.status === 'done' && !!orb.result;
 
+  /** Build the dispatch-log entries from this orb's chat history.
+   *  Walk messages in order; for each `spawn` marker we pair it with
+   *  the immediately-preceding `user` message (which is the prompt
+   *  that spawned it). The dispatch card uses that prompt as its
+   *  primary content. Lonely user messages and orphan agent messages
+   *  are skipped — orchestrators don't have their own chat thread in
+   *  the dispatcher reframe; conversation lives in suborbs. */
+  const dispatches = useMemo(() => {
+    const out: Array<{
+      id: string;
+      prompt: string;
+      suborb: Orb | undefined;
+      status: OrbStatus;
+      stream: string;
+    }> = [];
+    let pendingUser: Message | null = null;
+    for (const m of messages) {
+      if (m.role === 'user') {
+        pendingUser = m;
+      } else if (m.role === 'spawn' && m.spawned_orb_id) {
+        const sub = orbsById.get(m.spawned_orb_id);
+        const promptText =
+          (pendingUser?.content || sub?.prompt || '').trim() || '(no prompt)';
+        out.push({
+          id: m.id,
+          prompt: promptText,
+          suborb: sub,
+          status: sub?.status ?? 'working',
+          stream: streams.get(m.spawned_orb_id) || '',
+        });
+        pendingUser = null;
+      } else {
+        // any other role (e.g. legacy 'agent' from earlier behavior) —
+        // just clear pending so it doesn't leak into the next dispatch
+        pendingUser = null;
+      }
+    }
+    return out;
+  }, [messages, orbsById, streams]);
+
   const style: CSSProperties = isOpen
     ? {
         left: '50%',
@@ -233,63 +279,58 @@ export function ChatOrchestrator({
         </aside>
 
         <section className="chat-col">
-          <div className="messages" ref={messagesRef}>
-            {orb.parent_id === null && messages.length === 0 && (
-              <div className="msg agent dim">
-                chat to spawn a sub-orb. each message becomes a new agent task.
+          <div className="messages dispatch-log" ref={messagesRef}>
+            {dispatches.length === 0 && (
+              <div className="dispatch-empty">
+                no dispatches yet — type a task below to spawn a sub-orb.
+                each dispatch becomes its own agent; click a card to chat.
               </div>
             )}
-            {messages.map((m) => {
-              if (m.role === 'user') {
-                return (
-                  <div key={m.id} className="msg user">
-                    {m.content}
+            {dispatches.map((d) => {
+              const sub = d.suborb;
+              const subType = agentTypeOf(sub ?? orb);
+              const status = d.status;
+              const liveText =
+                status === 'done'
+                  ? sub?.result || ''
+                  : status === 'failed'
+                  ? sub?.result || 'failed'
+                  : d.stream;
+              return (
+                <div
+                  key={d.id}
+                  className={`dispatch ${status}`}
+                  onClick={(e) => {
+                    if (sub)
+                      onOpenSuborbWindow(sub.id, { x: e.clientX, y: e.clientY });
+                  }}
+                  style={{
+                    // type-tinted left border so each card carries its
+                    // backend's color even before any UI does anything
+                    borderLeftColor: subType.cssAccent,
+                  }}
+                >
+                  <div className="dispatch-row">
+                    <span className={`dispatch-dot status-${status}`} />
+                    <span className="dispatch-prompt">{d.prompt}</span>
+                    <span className="dispatch-status">
+                      {status === 'working' && 'thinking…'}
+                      {status === 'done' && (sub?.display_name || 'done')}
+                      {status === 'failed' && 'failed'}
+                    </span>
                   </div>
-                );
-              }
-              if (m.role === 'agent') {
-                return (
-                  <div key={m.id} className="msg agent">
-                    {m.content}
+                  {liveText && (
+                    <div className="dispatch-preview">{liveText}</div>
+                  )}
+                  <div className="dispatch-meta">
+                    <span className="dispatch-type">{subType.label.toLowerCase()}</span>
+                    <span className="dispatch-action">click to chat →</span>
                   </div>
-                );
-              }
-              if (m.role === 'spawn' && m.spawned_orb_id) {
-                const sub = orbsById.get(m.spawned_orb_id);
-                const stream = streams.get(m.spawned_orb_id) || '';
-                const status = sub?.status ?? 'working';
-                const name = sub?.display_name || '…';
-                const text =
-                  status === 'done'
-                    ? sub?.result || ''
-                    : status === 'failed'
-                    ? sub?.result || 'failed'
-                    : stream;
-                return (
-                  <div
-                    key={m.id}
-                    className={`spawn ${status}`}
-                    onClick={(e) => {
-                      if (sub) onOpenSuborbWindow(sub.id, { x: e.clientX, y: e.clientY });
-                    }}
-                  >
-                    <div className="spawn-header">
-                      <span className="spawn-dot" />
-                      <span className="spawn-name">{name}</span>
-                      <span className="spawn-status">
-                        {status === 'working' && 'thinking…'}
-                        {status === 'done' && 'click to chat →'}
-                        {status === 'failed' && 'failed'}
-                      </span>
-                    </div>
-                    {text && <div className="spawn-text">{text}</div>}
-                  </div>
-                );
-              }
-              return null;
+                </div>
+              );
             })}
           </div>
-          <div className="input-row">
+          <div className="input-row dispatch-input">
             <span className="input-prompt">›</span>
             <input
               ref={inputRef}
@@ -298,7 +339,7 @@ export function ChatOrchestrator({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submit();
               }}
-              placeholder="Spawn a sub-orb..."
+              placeholder="dispatch a task…"
               disabled={submitting || !isOpen}
             />
           </div>
