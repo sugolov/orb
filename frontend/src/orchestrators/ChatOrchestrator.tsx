@@ -13,10 +13,35 @@
 // will gain a per-dispatch agent-backend selector in Task 4.
 
 import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
-import type { MemoryItem, Message, Orb, OrbStatus } from '../api';
+import type {
+  AgentType,
+  MemoryItem,
+  Message,
+  Orb,
+  OrbStatus,
+} from '../api';
 import { sendMessage } from '../api';
 import { agentTypeOf } from '../agentTypes';
 import type { OrchestratorProps } from '../OrchestratorPanel';
+
+/** Parse a leading slash command from a dispatch prompt. Returns the
+ *  parsed type override (or null) and the residual prompt. Supports:
+ *    /code <prompt>      → agent_type_override: 'code'
+ *    /research <prompt>  → 'research'
+ *    /computer <prompt>  → 'computer'
+ *    /voice <prompt>     → 'voice'
+ *    /chat <prompt>      → 'chat' (force chat type even when in a
+ *                          specialized orchestrator) */
+function parseSlashCommand(
+  text: string,
+): { typeOverride: AgentType | null; prompt: string } {
+  const m = text.match(/^\/(code|research|computer|voice|chat)\s+([\s\S]+)$/);
+  if (!m) return { typeOverride: null, prompt: text };
+  return {
+    typeOverride: m[1] as AgentType,
+    prompt: m[2].trim(),
+  };
+}
 
 function breadcrumb(orb: Orb, orbsById: Map<string, Orb>): Orb[] {
   const chain: Orb[] = [];
@@ -141,12 +166,26 @@ export function ChatOrchestrator({
     if (!text || submitting) return;
     setSubmitting(true);
     setInput('');
+    // Slash commands let the user override the spawned suborb's
+    // agent_type from a chat orchestrator: `/code refactor auth.py`
+    // spawns a code-typed sub-orb whose orchestrator (when later
+    // promoted) opens the CodeOrchestrator. This is the
+    // type-switching-at-spawn affordance from PLAN.md Phase G.
+    const parsed = parseSlashCommand(text);
+    const opts: {
+      backend_id?: string;
+      agent_type_override?: AgentType;
+    } = {};
+    if (parsed.typeOverride) {
+      opts.agent_type_override = parsed.typeOverride;
+      // when the user explicitly requests a type, don't carry the
+      // current orchestrator's default backend — let the registry
+      // pick the override type's preferred backend instead.
+    } else if (selectedBackendId) {
+      opts.backend_id = selectedBackendId;
+    }
     try {
-      await sendMessage(
-        orb.id,
-        text,
-        selectedBackendId ? { backend_id: selectedBackendId } : {},
-      );
+      await sendMessage(orb.id, parsed.prompt || text, opts);
     } catch (e) {
       console.error(e);
     } finally {
@@ -393,7 +432,7 @@ export function ChatOrchestrator({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submit();
               }}
-              placeholder="dispatch a task…"
+              placeholder="dispatch a task… (try /code, /research)"
               disabled={submitting || !isOpen}
             />
           </div>
