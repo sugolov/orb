@@ -26,6 +26,21 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 4 — backend agent registry + pluggable backends ✓
+
+- `backend/src/agents/` new module with `base.AgentBackend` + 5
+  concrete backends (echo, claude-chat, claude-code, claude-research
+  stub, claude-computer stub) and a registry.
+- `run_agent`/`run_agent_continue` rewritten as thin runners over
+  the registry. Backend instances cached per orb id in `agents_by_orb`
+  so follow-ups keep their context.
+- `delete_orb` now stops the backend (subprocess teardown).
+- New `GET /api/agent-backends` for the frontend dropdown.
+- BLOCKED: `claude-research` (needs a web search provider — Brave/Exa/
+  Tavily/Anthropic search-tool — none wired). `claude-computer`
+  (needs screenshot+input infra; deferred).
+- Trace clean — echo + claude-chat round-trip via the new path.
+
 ### Task 3 — orchestrator reframed as dispatcher ✓
 
 - Center column of the orchestrator panel is now a dispatch log: one
