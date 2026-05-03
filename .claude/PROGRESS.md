@@ -26,6 +26,20 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 6 — code orchestrator surface ✓
+
+- `CodeOrchestrator` is a real terminal-style scrollback. Each
+  dispatched sub-orb is a collapsible CodeBlock; inside it tool_use
+  / tool_result events render as `$ name {input}` + indented pre
+  output. Falls back to plain text stream for backends without tool
+  events (echo).
+- `Scene.tsx` checks `agent_type.spawnsSuborbsAbovePanel`: code orb
+  sub-orbs render inline in the terminal, NOT as floating 3D orbs.
+- New `.code-*` styles in styles.css; cyan/sky theme.
+- Default backend for code orbs: `claude-code` via registry, with
+  echo fallback when CLI missing.
+- Trace clean.
+
 ### Task 5 — backend events into sub-orb visuals ✓
 
 - App's `runEvents: Map<orb_id, RunEvent[]>` captures tool_use /
