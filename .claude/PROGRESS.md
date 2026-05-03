@@ -26,6 +26,19 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 5 — backend events into sub-orb visuals ✓
+
+- App's `runEvents: Map<orb_id, RunEvent[]>` captures tool_use /
+  tool_result / error / done events. Reset on `thinking`.
+- Tool events ALSO get a textual annotation in `streams` so chat-
+  style surfaces (no terminal renderer) still display something
+  when tools fire.
+- `OrchestratorProps.runEvents` plumbed through; CodeOrchestrator
+  (Task 6) uses it for terminal rendering.
+- Most of Task 5 was already satisfied by Task 4 (real backends,
+  state transitions, instance caching, deletion teardown).
+- Trace clean.
+
 ### Task 4 — backend agent registry + pluggable backends ✓
 
 - `backend/src/agents/` new module with `base.AgentBackend` + 5
