@@ -26,6 +26,21 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 3 — orchestrator reframed as dispatcher ✓
+
+- Center column of the orchestrator panel is now a dispatch log: one
+  card per sub-orb spawned at this level. Card carries type-tinted
+  border, status dot, prompt, optional live stream preview, type
+  label.
+- Built from the existing message stream: each `spawn` marker is
+  paired with the immediately-preceding `user` message to form a
+  card. Lonely user/agent messages are skipped (orchestrators don't
+  have their own chat thread anymore).
+- No backend change required — backend already wasn't appending
+  agent-side messages to the orchestrator chat.
+- Trace clean: click → empty log → dispatch task → card appears →
+  click card → chat window → pin → ring view → re-enter → log intact.
+
 ### Task 2 — typed ring orbs + per-type color ✓
 
 - Backend `_seed_ring_orbs()` runs at lifespan startup; seeds the six

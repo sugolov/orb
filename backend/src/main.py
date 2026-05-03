@@ -58,11 +58,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+from agents import registry as agent_registry
+from agents.base import AgentBackend, AgentCallbacks
+from agents.echo import EchoBackend
 
 load_dotenv()
 
@@ -291,6 +294,11 @@ orbs: dict[str, Orb] = {}
 messages_by_orb: dict[str, list[Message]] = {}
 memory_by_orb: dict[str, list[MemoryItem]] = {}
 clients: set[WebSocket] = set()
+# Live agent-backend instances keyed by orb id. Created on first run,
+# kept around so follow-up messages route to the same instance and
+# preserve any internal state (chat history, subprocess handle, etc.).
+# Cleared on orb deletion or explicit stop.
+agents_by_orb: dict[str, AgentBackend] = {}
 
 
 def _label_from_prompt(prompt: str) -> str:
@@ -531,132 +539,137 @@ async def emit_run_event(orb_id: str, event: RunEvent) -> None:
 # agent runner
 # ---------------------------------------------------------------------------
 
+def _make_callbacks(orb_id: str) -> AgentCallbacks:
+    """Wire backend events to WS broadcasts. The runner provides this to
+    every backend; backends call into the callbacks and the runner
+    handles `run_event` envelope + status state."""
+
+    async def on_thinking() -> None:
+        await emit_run_event(orb_id, RunEvent(kind="thinking"))
+
+    async def on_chunk(text: str) -> None:
+        await emit_run_event(orb_id, RunEvent(kind="output_chunk", text=text))
+
+    async def on_tool_use(name: str, input_: dict[str, Any]) -> None:
+        await emit_run_event(
+            orb_id, RunEvent(kind="tool_use", name=name, input=input_)
+        )
+
+    async def on_tool_result(output: Any) -> None:
+        await emit_run_event(
+            orb_id, RunEvent(kind="tool_result", output=output)
+        )
+
+    async def on_error(message: str) -> None:
+        # Don't apply state here — run_agent's exception path does that.
+        # This is for backend-internal errors that don't kill the run.
+        await emit_run_event(orb_id, RunEvent(kind="error", error=message))
+
+    return AgentCallbacks(
+        on_thinking=on_thinking,
+        on_chunk=on_chunk,
+        on_tool_use=on_tool_use,
+        on_tool_result=on_tool_result,
+        on_error=on_error,
+    )
+
+
+def _backend_for(orb: Orb) -> AgentBackend:
+    """Resolve / instantiate the backend for a given orb. Cached per
+    orb id so follow-up `send_message` calls hit the same instance.
+
+    Selection order:
+      1. orb.agent_config['backend_id'] — explicit per-orb override
+      2. registry.default_for_type(orb.agent_type) — type's preferred
+      3. Echo as ultimate fallback
+    """
+    cached = agents_by_orb.get(orb.id)
+    if cached is not None:
+        return cached
+
+    explicit_id = orb.agent_config.get("backend_id") if orb.agent_config else None
+    backend_class = None
+    if explicit_id:
+        backend_class = agent_registry.get_backend(str(explicit_id))
+        if backend_class is not None and not backend_class.is_available():
+            backend_class = None  # ignore explicit if not actually runnable
+    if backend_class is None:
+        backend_class = agent_registry.default_for_type(orb.agent_type)
+    if backend_class is None:
+        backend_class = EchoBackend
+
+    instance = backend_class(orb_id=orb.id, config=orb.agent_config or {})
+    agents_by_orb[orb.id] = instance
+    return instance
+
+
 async def run_agent(orb_id: str) -> None:
-    """Execute a suborb's agent loop.
+    """Execute a suborb's first agent invocation.
 
-    Steps:
-      1. Validate the orb exists and is a suborb with a prompt.
-      2. Build the system prompt by walking the ancestor chain — this
-         is the tree-as-context principle made concrete: the suborb sees
-         all memory accumulated by its ancestors.
-      3. Emit `thinking` so the frontend can start its animation.
-      4. Stream Anthropic completion, broadcasting `output_chunk` events.
-      5. On clean finish: persist final text, mirror as an `agent`
-         message, transition status to `done`, emit `done` event.
-      6. On exception: status `failed`, emit `error` event.
-
-    Without an ANTHROPIC_API_KEY we fall back to a deterministic fake
-    stream so the UX is exercisable without an external dependency.
+    Pipeline:
+      1. Validate the orb is a suborb with a prompt.
+      2. Resolve the backend via `_backend_for` (registry pick).
+      3. Build the system prompt fresh from the live tree-as-context.
+      4. Emit `thinking`, hand off to `backend.start(prompt, system, callbacks)`.
+      5. On return: finalize_run with the text result.
+      6. On exception: fail_run.
     """
     orb = orbs.get(orb_id)
     if not orb:
         return
     if orb.kind != "suborb" or not orb.prompt:
-        # only suborbs run agents; orchestrators are chat threads that
-        # spawn suborbs.
         return
 
-    await emit_run_event(orb_id, RunEvent(kind="thinking"))
-
-    if not ANTHROPIC_API_KEY:
-        await _run_fake(orb)
-        return
-
-    system = _build_system_prompt(orb)
-    client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    accumulated: list[str] = []
+    callbacks = _make_callbacks(orb_id)
+    if callbacks.on_thinking:
+        await callbacks.on_thinking()
 
     try:
-        async with client.messages.stream(
-            model=ORB_MODEL,
-            max_tokens=1024,
-            system=system,
-            messages=[{"role": "user", "content": orb.prompt}],
-        ) as stream:
-            async for text in stream.text_stream:
-                accumulated.append(text)
-                await emit_run_event(
-                    orb_id, RunEvent(kind="output_chunk", text=text)
-                )
-        result = "".join(accumulated).strip()
+        backend = _backend_for(orb)
+        system = _build_system_prompt(orb)
+        result = await backend.start(orb.prompt, system, callbacks)
         await _finalize_run(orb, result)
     except Exception as e:  # noqa: BLE001
         await _fail_run(orb, str(e))
 
 
-async def _run_fake(orb: Orb) -> None:
-    """Placeholder when no Anthropic key is configured. Streams a canned
-    response in word-sized chunks so the animation pipeline is still
-    exercised."""
-    fake = (
-        f'(no ANTHROPIC_API_KEY set — placeholder response for '
-        f'"{orb.prompt}")'
-    )
-    accumulated: list[str] = []
-    for chunk in fake.split(" "):
-        token = chunk + " "
-        accumulated.append(token)
-        await emit_run_event(orb.id, RunEvent(kind="output_chunk", text=token))
-        await asyncio.sleep(0.04)
-    await _finalize_run(orb, "".join(accumulated).strip())
-
-
 async def run_agent_continue(orb_id: str) -> None:
-    """Continue a suborb's existing conversation. Re-runs the agent with
-    the suborb's full chat history (multi-turn). The suborb itself
-    "answers" — it does NOT spawn a new sub-suborb. This is the path
-    used when the user types in a suborb's chat window.
-
-    Conversation shape sent to the model:
-      [user]  <orb.prompt>            ← the original spawning prompt
-      [assistant] <prior agent reply>
-      [user]  <new follow-up>
-      ...
-    """
+    """Continue a suborb's conversation — multi-turn. Routes to the
+    same backend instance held in `agents_by_orb`. Falls back to
+    rebuilding history + start if the instance is gone (e.g. server
+    restart, though state itself is currently in-memory)."""
     orb = orbs.get(orb_id)
     if not orb or orb.kind != "suborb":
         return
 
-    await emit_run_event(orb_id, RunEvent(kind="thinking"))
-
-    if not ANTHROPIC_API_KEY:
-        await _run_fake_continue(orb)
+    # the latest user message is the one we want to send
+    msgs = messages_by_orb.get(orb_id, [])
+    last_user = next(
+        (m for m in reversed(msgs) if m.role == "user" and m.content), None
+    )
+    if not last_user or not last_user.content:
         return
 
-    # Build the message list. The original spawning prompt is in
-    # orb.prompt (NOT in the suborb's own messages — it lives in the
-    # parent's chat as a `user` message there). We treat it as the
-    # implicit first user turn so the model has the full context.
-    api_messages: list[dict[str, str]] = []
-    if orb.prompt:
-        api_messages.append({"role": "user", "content": orb.prompt})
-    for m in messages_by_orb.get(orb_id, []):
-        if m.role == "user" and m.content:
-            api_messages.append({"role": "user", "content": m.content})
-        elif m.role == "agent" and m.content:
-            api_messages.append({"role": "assistant", "content": m.content})
-
-    system = _build_system_prompt(orb)
-    client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    accumulated: list[str] = []
+    callbacks = _make_callbacks(orb_id)
+    if callbacks.on_thinking:
+        await callbacks.on_thinking()
 
     try:
-        async with client.messages.stream(
-            model=ORB_MODEL,
-            max_tokens=1024,
-            system=system,
-            messages=api_messages,
-        ) as stream:
-            async for text in stream.text_stream:
-                accumulated.append(text)
-                await emit_run_event(
-                    orb_id, RunEvent(kind="output_chunk", text=text)
-                )
-        result = "".join(accumulated).strip()
+        backend = _backend_for(orb)
+        system = _build_system_prompt(orb)
+        try:
+            result = await backend.send_message(
+                last_user.content, system, callbacks
+            )
+        except NotImplementedError:
+            # backend doesn't support multi-turn — fall back to a
+            # fresh `start` with this turn as the prompt. Loses
+            # in-process history but the system prompt's parent-chat
+            # walk-up still gives the model context.
+            result = await backend.start(last_user.content, system, callbacks)
 
-        # Continuation does NOT overwrite orb.result (we keep the FIRST
-        # response as the canonical "result"). It also doesn't rename.
-        # We just append a new agent message and flip status back to done.
+        # Continuation appends a new `agent` message but doesn't
+        # overwrite orb.result (keep the canonical first answer).
         orb.status = "done"
         agent_msg = Message(
             id=_new_id(), orb_id=orb.id, role="agent", content=result
@@ -665,29 +678,12 @@ async def run_agent_continue(orb_id: str) -> None:
         await broadcast(
             {"type": "orb_updated", "id": orb.id, "patch": {"status": "done"}}
         )
-        await broadcast({"type": "message_added", "message": agent_msg.model_dump()})
+        await broadcast(
+            {"type": "message_added", "message": agent_msg.model_dump()}
+        )
         await emit_run_event(orb.id, RunEvent(kind="done", text=result))
     except Exception as e:  # noqa: BLE001
         await _fail_run(orb, str(e))
-
-
-async def _run_fake_continue(orb: Orb) -> None:
-    fake = "(no ANTHROPIC_API_KEY set — placeholder follow-up reply)"
-    accumulated: list[str] = []
-    for chunk in fake.split(" "):
-        token = chunk + " "
-        accumulated.append(token)
-        await emit_run_event(orb.id, RunEvent(kind="output_chunk", text=token))
-        await asyncio.sleep(0.04)
-    result = "".join(accumulated).strip()
-    orb.status = "done"
-    agent_msg = Message(id=_new_id(), orb_id=orb.id, role="agent", content=result)
-    messages_by_orb.setdefault(orb.id, []).append(agent_msg)
-    await broadcast(
-        {"type": "orb_updated", "id": orb.id, "patch": {"status": "done"}}
-    )
-    await broadcast({"type": "message_added", "message": agent_msg.model_dump()})
-    await emit_run_event(orb.id, RunEvent(kind="done", text=result))
 
 
 async def _finalize_run(orb: Orb, result: str) -> None:
@@ -795,6 +791,16 @@ async def health() -> dict[str, Any]:
     }
 
 
+@app.get("/api/agent-backends")
+async def list_agent_backends() -> list[dict[str, Any]]:
+    """Catalog of every registered agent backend (id, display_name,
+    agent_type, description, available). The dispatcher dropdown
+    populates from this — filters by `agent_type` matching the current
+    orchestrator and offers an "+ other" affordance to spawn typed
+    sub-orbs of a different type."""
+    return [info.__dict__ for info in agent_registry.list_infos()]
+
+
 @app.get("/api/orbs")
 async def list_orbs() -> list[Orb]:
     return list(orbs.values())
@@ -890,6 +896,14 @@ async def delete_orb(orb_id: str) -> dict[str, str]:
         orbs.pop(oid, None)
         messages_by_orb.pop(oid, None)
         memory_by_orb.pop(oid, None)
+        # tear down any live agent backend so subprocesses / sessions
+        # are released cleanly
+        backend = agents_by_orb.pop(oid, None)
+        if backend is not None:
+            try:
+                await backend.stop()
+            except Exception:  # noqa: BLE001
+                pass
         await broadcast({"type": "orb_deleted", "id": oid})
     return {"deleted": "ok"}
 
