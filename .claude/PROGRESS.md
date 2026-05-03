@@ -26,6 +26,18 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 8 — sub-orb-centric polish ✓
+
+- SuborbWindow header dot uses orb's agent_type color (idle/done);
+  working state keeps purple pulse for universal "thinking" signal.
+- SuborbWindow left border uses --type-accent CSS variable for
+  type identity at a glance.
+- Panel background slightly more transparent (0.78 → 0.62) so the
+  3D scene reads as foreground.
+- Hover tooltip on orb labels (type + prompt + first line of
+  result). Native title= for now.
+- Trace clean.
+
 ### Task 7 — real backend wiring (verified, partial) ✓
 
 Wired and live (already from Task 4):
