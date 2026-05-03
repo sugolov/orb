@@ -26,3 +26,20 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 1 — pluggable orchestrator surface + agent_type ✓
+
+- Backend: `AgentType` literal added; `Orb`/`CreateOrb`/`PatchOrb` carry
+  `agent_type` (default `'chat'`) and `agent_config` (empty dict).
+  Suborbs inherit parent's `agent_type` at spawn (`post_message`).
+- Frontend: `agentTypes.ts` is the visual registry (color / working
+  color / suborb policy / css accent). `OrchestratorPanel.tsx` routes
+  on `orb.agent_type`. `Panel.tsx` is a re-export shim so App stays
+  untouched. `Code/Research/Computer/Voice` orchestrators are stubs
+  that fall through to `ChatOrchestrator` for now.
+- Type-check passes; backend imports clean.
+- Trace: click chat orb → orchestrator opens (same body as before, now
+  via `ChatOrchestrator`) → spawn suborb → click → chat window → pin →
+  back to ring → re-enter. All preserved because chat orbs remain the
+  default and the routing is structurally identical.
+
+
