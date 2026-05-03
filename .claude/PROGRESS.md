@@ -26,6 +26,46 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 7 — real backend wiring (verified, partial) ✓
+
+Wired and live (already from Task 4):
+- `echo` — always available, deterministic stream for testing.
+- `claude-chat` — Anthropic Messages API streaming. Available iff
+  `ANTHROPIC_API_KEY` env var is set (loaded via `python-dotenv`
+  from `backend/.env`). System prompt assembled fresh each turn
+  from the orb's tree-as-context walk; per-instance message history
+  preserves multi-turn continuation.
+- `claude-code` — spawns the `claude` CLI as a subprocess with
+  `--print --output-format stream-json`. Parses incremental JSON
+  events into AgentCallbacks (assistant text → on_chunk; tool_use
+  blocks → on_tool_use; tool_result blocks → on_tool_result).
+  Sandboxed to `~/.orb/workspaces/{orb_id}` per code orb.
+
+BLOCKED:
+- `claude-research` — requires a web-search provider integration.
+  Options to unblock: (a) Anthropic's web_search beta tool (when
+  generally available); (b) Brave Search API (`BRAVE_API_KEY`);
+  (c) Exa (`EXA_API_KEY`); (d) Tavily (`TAVILY_API_KEY`). Backend
+  reports `is_available() == False`; registry routes research-orb
+  dispatches to `echo` as fallback.
+- `claude-computer` — requires significant infra: virtual display
+  / screen capture (e.g. xvfb + screenshot pipeline), input
+  injection (pyautogui / playwright), action recording. Likely
+  needs a Docker container or VM. Out of scope for an overnight
+  pass. Backend reports unavailable.
+
+Followups not addressed but worth noting:
+- ClaudeCodeBackend doesn't yet implement `send_message` (multi-turn
+  continuation). Each follow-up via the runner falls through to
+  `start()` which spawns a fresh CLI subprocess. Working directory
+  is preserved across calls, so persistent state on disk carries
+  over, but in-memory CLI session does not. Real fix: hold a
+  long-lived `claude` interactive process and pipe new prompts in.
+- ClaudeChatBackend keeps its own message history per instance; the
+  orchestrator's chat history (parent's chat) is included via the
+  system prompt walk-up. This is consistent with the spec's
+  ARCHITECTURE.md §4.5 pattern.
+
 ### Task 6 — code orchestrator surface ✓
 
 - `CodeOrchestrator` is a real terminal-style scrollback. Each
