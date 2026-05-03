@@ -247,6 +247,16 @@ class CreateOrb(BaseModel):
 
 class PostMessage(BaseModel):
     content: str
+    # Optional: explicitly choose which backend handles the dispatched
+    # sub-orb. Set by the dispatcher dropdown's selection. When unset,
+    # the registry's `default_for_type` picks based on the suborb's
+    # agent_type (which inherits from the parent orchestrator).
+    backend_id: str | None = None
+    # Optional: choose a different agent_type for the dispatched
+    # sub-orb than the orchestrator's. Used by slash commands like
+    # `/code <prompt>` to spawn a code suborb from inside a chat
+    # orchestrator. When unset, suborb inherits parent's agent_type.
+    agent_type_override: AgentType | None = None
 
 
 class PatchOrb(BaseModel):
@@ -1018,8 +1028,12 @@ async def post_message(orb_id: str, body: PostMessage) -> dict[str, str | None]:
 
     # orchestrator path — spawn a fresh suborb whose prompt is the user's
     # text. display_name left empty until _finalize_run picks one.
-    # Suborbs inherit their parent's agent_type unless explicitly
-    # overridden (Phase G / Task 5: type-switching at spawn).
+    # Suborbs inherit their parent's agent_type unless the dispatch
+    # body provides an explicit override (slash-command spawn).
+    sub_agent_type = body.agent_type_override or parent.agent_type
+    sub_config: dict[str, Any] = dict(parent.agent_config)
+    if body.backend_id:
+        sub_config["backend_id"] = body.backend_id
     suborb = Orb(
         id=_new_id(),
         parent_id=orb_id,
@@ -1027,8 +1041,8 @@ async def post_message(orb_id: str, body: PostMessage) -> dict[str, str | None]:
         display_name="",
         prompt=content,
         status="working",
-        agent_type=parent.agent_type,
-        agent_config=dict(parent.agent_config),
+        agent_type=sub_agent_type,
+        agent_config=sub_config,
     )
     orbs[suborb.id] = suborb
     messages_by_orb[suborb.id] = []

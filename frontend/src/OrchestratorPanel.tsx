@@ -11,7 +11,13 @@
 //   5. Add a case to the switch below.
 // TypeScript's exhaustive-switch warning will catch a missed case.
 
-import type { MemoryItem, Message, Orb, RunEvent } from './api';
+import type {
+  AgentBackendInfo,
+  MemoryItem,
+  Message,
+  Orb,
+  RunEvent,
+} from './api';
 import type { ScreenPos } from './Scene';
 import type { Phase } from './App';
 import { ChatOrchestrator } from './orchestrators/ChatOrchestrator';
@@ -36,6 +42,10 @@ export interface OrchestratorProps {
    *  without re-parsing the textual stream. */
   runEvents: Map<string, RunEvent[]>;
   memory: Map<string, MemoryItem[]>;
+  /** Catalog of available agent backends. Dispatcher dropdowns use
+   *  this to populate options matching the orchestrator's
+   *  agent_type, plus an "+ other" affordance for the rest. */
+  backends: AgentBackendInfo[];
   transitionOrigin: ScreenPos;
   phase: Phase;
   onClose: () => void;

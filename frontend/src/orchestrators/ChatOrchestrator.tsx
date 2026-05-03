@@ -71,6 +71,7 @@ export function ChatOrchestrator({
   orbsById,
   streams,
   memory,
+  backends,
   transitionOrigin,
   phase,
   onClose,
@@ -110,13 +111,42 @@ export function ChatOrchestrator({
     el.scrollTop = el.scrollHeight;
   }, [messages, streams]);
 
+  /** Backends matching this orchestrator's agent_type. The dropdown
+   *  shows these by default; "+ other" lets the user pick any. */
+  const matchingBackends = useMemo(
+    () => backends.filter((b) => b.available && b.agent_type === orb.agent_type),
+    [backends, orb.agent_type],
+  );
+  const allAvailable = useMemo(
+    () => backends.filter((b) => b.available),
+    [backends],
+  );
+  const [selectedBackendId, setSelectedBackendId] = useState<string>('');
+  // Pick a sensible default when matching backends become available.
+  // Prefer non-echo within the type, else first available, else echo.
+  useEffect(() => {
+    if (selectedBackendId) {
+      // if the selection is no longer offered, drop it
+      const ok = allAvailable.some((b) => b.id === selectedBackendId);
+      if (!ok) setSelectedBackendId('');
+      return;
+    }
+    const real = matchingBackends.find((b) => b.id !== 'echo');
+    const fallback = matchingBackends[0] ?? allAvailable[0];
+    setSelectedBackendId((real ?? fallback)?.id ?? '');
+  }, [matchingBackends, allAvailable, selectedBackendId]);
+
   const submit = async () => {
     const text = input.trim();
     if (!text || submitting) return;
     setSubmitting(true);
     setInput('');
     try {
-      await sendMessage(orb.id, text);
+      await sendMessage(
+        orb.id,
+        text,
+        selectedBackendId ? { backend_id: selectedBackendId } : {},
+      );
     } catch (e) {
       console.error(e);
     } finally {
@@ -331,6 +361,30 @@ export function ChatOrchestrator({
             })}
           </div>
           <div className="input-row dispatch-input">
+            <select
+              className="backend-select"
+              value={selectedBackendId}
+              onChange={(e) => setSelectedBackendId(e.target.value)}
+              title="dispatch backend — which agent runs this task"
+              disabled={submitting || !isOpen || allAvailable.length === 0}
+            >
+              {matchingBackends.length > 0 && (
+                <optgroup label={`${orb.agent_type} agents`}>
+                  {matchingBackends.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.display_name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {allAvailable
+                .filter((b) => b.agent_type !== orb.agent_type)
+                .map((b) => (
+                  <optgroup key={b.id} label={`other (${b.agent_type})`}>
+                    <option value={b.id}>{b.display_name}</option>
+                  </optgroup>
+                ))}
+            </select>
             <span className="input-prompt">›</span>
             <input
               ref={inputRef}

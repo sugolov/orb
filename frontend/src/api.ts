@@ -152,13 +152,44 @@ export async function addMemory(
   return r.json();
 }
 
-export async function sendMessage(orb_id: string, content: string): Promise<{ suborb_id: string }> {
+export interface DispatchOptions {
+  /** Force a specific backend for this sub-orb. When unset, the
+   *  backend defaults to the registry's choice for the orchestrator's
+   *  agent_type. */
+  backend_id?: string;
+  /** Spawn the sub-orb with a different agent_type than the parent
+   *  orchestrator (e.g. slash command `/code` from a chat orb). */
+  agent_type_override?: AgentType;
+}
+
+export async function sendMessage(
+  orb_id: string,
+  content: string,
+  opts: DispatchOptions = {},
+): Promise<{ suborb_id: string }> {
+  const body: Record<string, unknown> = { content };
+  if (opts.backend_id) body.backend_id = opts.backend_id;
+  if (opts.agent_type_override) body.agent_type_override = opts.agent_type_override;
   const r = await fetch(`${apiBase}/api/orbs/${orb_id}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(`sendMessage ${r.status}`);
+  return r.json();
+}
+
+export interface AgentBackendInfo {
+  id: string;
+  display_name: string;
+  agent_type: AgentType;
+  description: string;
+  available: boolean;
+}
+
+export async function listAgentBackends(): Promise<AgentBackendInfo[]> {
+  const r = await fetch(`${apiBase}/api/agent-backends`);
+  if (!r.ok) throw new Error(`listAgentBackends ${r.status}`);
   return r.json();
 }
 

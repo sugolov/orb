@@ -9,9 +9,11 @@ import {
   addMemory,
   createOrb,
   deleteOrb,
+  listAgentBackends,
   listOrbs,
   patchOrb,
   useWS,
+  type AgentBackendInfo,
   type MemoryItem,
   type Message,
   type Orb,
@@ -159,6 +161,16 @@ export function App() {
     listOrbs()
       .then((list) => setOrbs(new Map(list.map((o) => [o.id, o]))))
       .catch((e) => console.warn('hydrate failed:', e));
+  }, []);
+
+  // fetch the agent-backend catalog so dispatcher dropdowns can
+  // populate. The list is small + immutable per server lifetime;
+  // one fetch is enough.
+  const [agentBackends, setAgentBackends] = useState<AgentBackendInfo[]>([]);
+  useEffect(() => {
+    listAgentBackends()
+      .then(setAgentBackends)
+      .catch((e) => console.warn('agent-backends fetch failed:', e));
   }, []);
 
   // ws subscription
@@ -707,6 +719,7 @@ export function App() {
           streams={streams}
           runEvents={runEvents}
           memory={memory}
+          backends={agentBackends}
           transitionOrigin={transitionOrigin}
           phase={phase}
           onClose={handleClose}
