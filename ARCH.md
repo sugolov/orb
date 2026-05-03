@@ -315,6 +315,131 @@ as needed.
 
 ---
 
+## Pluggable architecture (overnight branch, ring-orb specialization)
+
+Two registries make ring orbs *typed*: a frontend visual registry +
+a backend behavior registry. Both are keyed by the same
+`AgentType` literal (`'chat' | 'code' | 'research' | 'computer' | 'voice'`)
+mirrored on each side, so adding a new type forces an exhaustive
+match in both places.
+
+### Orchestrator-surface registry (frontend)
+
+`frontend/src/agentTypes.ts` is the **single source of truth** for
+per-type visuals: base color, working-state color, suborb policy
+(does this type's orchestrator render its sub-orbs as floating
+3D orbs above the panel, or inline?), CSS accent for type-tinted
+UI bits.
+
+`frontend/src/OrchestratorPanel.tsx` is the **render-mode router**.
+It dispatches on `orb.agent_type` to:
+
+  - `orchestrators/ChatOrchestrator.tsx` — dispatch-log + memory column
+  - `orchestrators/CodeOrchestrator.tsx` — terminal-style scrollback
+  - `orchestrators/ResearchOrchestrator.tsx` — chat + sources stub
+  - `orchestrators/ComputerOrchestrator.tsx` — screen+actions stub
+  - `orchestrators/VoiceOrchestrator.tsx` — mic+transcript stub
+
+The router uses an exhaustive `switch` with a `never`-typed default
+so adding a new `AgentType` variant produces a compile error until
+a case is added.
+
+The shared `OrchestratorProps` shape provides every component the
+same data: orb, messages, orbsById, streams, runEvents, memory,
+phase, transitionOrigin, plus action callbacks (close, open
+sub-window, delete, merge, promote). Each orchestrator uses what
+it needs.
+
+### Agent-backend registry (backend)
+
+`backend/src/agents/` is a Python module. The base class
+`AgentBackend` defines the contract:
+
+```python
+class AgentBackend(ABC):
+    id: ClassVar[str]               # 'claude-chat', 'claude-code', 'echo', ...
+    display_name: ClassVar[str]
+    agent_type: ClassVar[AgentType] # which orchestrator type it serves
+    description: ClassVar[str]
+
+    @classmethod
+    def is_available(cls) -> bool:
+        ...  # env-driven gate: API key present, CLI installed, etc.
+
+    def __init__(self, orb_id, config=None): ...
+    async def start(self, prompt, system_prompt, callbacks) -> str: ...
+    async def send_message(self, content, system_prompt, callbacks) -> str: ...
+    async def stop(self): ...
+```
+
+`AgentCallbacks` is the event sink (`on_thinking`, `on_chunk`,
+`on_tool_use`, `on_tool_result`, `on_done`, `on_error`). The runner
+in `main.py` wires these to WS broadcasts of the matching kind.
+
+`registry.py` exposes:
+
+  - `default_for_type(agent_type)` — preferred backend (falls back
+    to Echo if no specialized backend is available).
+  - `get_backend(id)` — explicit lookup for orbs whose
+    `agent_config['backend_id']` overrides the default.
+  - `list_infos()` — used by `GET /api/agent-backends` for the
+    frontend dropdown.
+
+The runner caches one `AgentBackend` instance per orb id in
+`agents_by_orb`, so follow-up messages route to the same instance
+and preserve in-process state (subprocess handles, chat history,
+tool sessions). On orb deletion, `backend.stop()` is called.
+
+### The dispatcher reframe
+
+Orchestrators don't have their own chat thread. Their job is to
+**dispatch** sub-orbs that hold the actual conversation:
+
+- The user types in the orchestrator's input → POST
+  `/api/orbs/{root_id}/messages`. Backend appends a `user` message
+  + a `spawn` marker to the orchestrator's chat, creates a sub-orb
+  inheriting the parent's `agent_type`, and spawns the agent loop.
+- The orchestrator panel renders these spawn markers as **dispatch
+  cards** (chat) or **terminal blocks** (code) — never as a chat
+  thread between the user and an "orchestrator-self" agent.
+- To CONVERSE with a sub-orb, the user clicks it → floating
+  `SuborbWindow` opens. Typing there continues that sub-orb's
+  conversation (multi-turn) without spawning further.
+
+This is the key UX shift on the overnight branch.
+
+### Adding a new agent type
+
+1. Add the literal to `AgentType` in `frontend/src/api.ts` AND
+   `backend/src/main.py`.
+2. Add the visual entry in `frontend/src/agentTypes.ts`.
+3. Add a backend in `backend/src/agents/<your_type>.py` and
+   register it in `registry.py`'s `_BACKENDS` list.
+4. Add an orchestrator component in
+   `frontend/src/orchestrators/<YourType>Orchestrator.tsx`.
+5. Add a case in `OrchestratorPanel.tsx`'s switch.
+
+TypeScript's exhaustive switch + Python's Literal type catch any
+missed wire-ups at compile / type-check time.
+
+### Adding a new backend (without adding a new type)
+
+Often you want multiple backends for the same type — e.g. "Claude
+chat" vs "GPT chat" vs "local Llama" all serving `agent_type='chat'`.
+
+1. Subclass `AgentBackend` in `backend/src/agents/<your_backend>.py`.
+2. Set `id` (unique), `display_name`, `agent_type='chat'`,
+   `description`. Implement `is_available` (gate on env var, CLI
+   path, etc.) and `start` / `send_message`.
+3. Append the class to `_BACKENDS` in `registry.py`.
+
+Done. The frontend dropdown picks it up automatically via
+`/api/agent-backends`. To make it the default for that type, ensure
+your backend appears before alternatives in `_BACKENDS` — registry
+returns the first matching available class as default.
+
+---
+
 ## Working principles
 
 These guide what goes in vs. what gets deferred.
