@@ -26,6 +26,17 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 9 — stub research/computer/voice orchestrators ✓
+
+- New `PlaceholderOrchestrator` shared shell + 3 per-type wrappers.
+- Each shows a distinct layout sketch (research: 2-pane synthesis|
+  sources; computer: wide screen|actions sidebar; voice: mic +
+  transcript). All carry their type accent color and a BLOCKED
+  marker pointing at PROGRESS.md.
+- Dispatch input still works → suborbs spawn (echo fallback for the
+  BLOCKED types).
+- Trace clean.
+
 ### Task 8 — sub-orb-centric polish ✓
 
 - SuborbWindow header dot uses orb's agent_type color (idle/done);
