@@ -1050,6 +1050,183 @@ html, body, #root {
 .dispatch-input {
   border-top-color: rgba(196, 168, 245, 0.18);
 }
+
+/* ---------- code orchestrator ---------- */
+.panel.code-panel {
+  /* same shell as chat — just a different border accent so the
+   * type identity carries through. */
+  border-color: rgba(125, 211, 252, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 60px rgba(125, 211, 252, 0.05),
+    0 0 40px rgba(125, 211, 252, 0.18),
+    0 0 90px rgba(125, 211, 252, 0.10),
+    0 0 180px rgba(125, 211, 252, 0.05);
+}
+.code-header {
+  border-bottom-color: rgba(125, 211, 252, 0.18);
+}
+.code-body {
+  display: flex !important;
+  flex-direction: column;
+  grid-template-columns: none !important;
+  min-height: 0;
+}
+.code-terminal {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.code-empty {
+  color: rgba(125, 211, 252, 0.45);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.code-block {
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: rgba(125, 211, 252, 0.04);
+  overflow: hidden;
+  animation: msgIn 0.2s ease both;
+}
+.code-block.status-working {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.06);
+}
+.code-block.status-failed {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.05);
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 11.5px;
+  user-select: none;
+  background: rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid rgba(125, 211, 252, 0.10);
+}
+.code-block-header:hover {
+  background: rgba(125, 211, 252, 0.06);
+}
+.code-block-marker {
+  color: rgba(125, 211, 252, 0.7);
+  flex-shrink: 0;
+  font-size: 10px;
+  width: 12px;
+}
+.code-block-prompt {
+  flex: 1;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.code-block-status {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.7);
+  flex-shrink: 0;
+}
+.code-block-status.status-done {
+  color: rgba(255, 255, 255, 0.7);
+}
+.code-block-status.status-failed {
+  color: rgba(255, 150, 150, 0.95);
+}
+.code-block-body {
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.code-line {
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.code-line.code-thinking {
+  color: rgba(125, 211, 252, 0.55);
+  font-style: italic;
+}
+.code-line.code-tool-use {
+  color: rgba(190, 230, 255, 0.95);
+}
+.code-line.code-tool-use .code-prompt-glyph {
+  color: rgba(125, 211, 252, 0.85);
+  font-weight: 700;
+}
+.code-line.code-tool-use .code-tool-name {
+  color: rgba(125, 211, 252, 1);
+  font-weight: 600;
+}
+.code-line.code-tool-use .code-tool-input {
+  color: rgba(255, 255, 255, 0.7);
+}
+.code-line.code-tool-result {
+  color: rgba(220, 240, 255, 0.85);
+  background: rgba(0, 0, 0, 0.25);
+  border-left: 2px solid rgba(125, 211, 252, 0.25);
+  padding: 5px 8px;
+  margin: 2px 0 4px 12px;
+  border-radius: 3px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.code-line.code-done {
+  color: rgba(125, 211, 252, 0.95);
+  cursor: pointer;
+  font-weight: 600;
+}
+.code-line.code-done:hover {
+  text-decoration: underline;
+}
+.code-line.code-failed {
+  color: rgba(255, 150, 150, 0.95);
+}
+.code-stream {
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  margin: 4px 0 0;
+}
+.input-row.code-input-row {
+  background: rgba(0, 0, 0, 0.4);
+  border-top-color: rgba(125, 211, 252, 0.18);
+}
+.code-input-row .input-prompt.code-prompt {
+  color: rgba(125, 211, 252, 0.85);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  font-size: 13px;
+}
+.code-input-row input {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
 .msg {
   max-width: 85%;
   padding: 9px 13px;

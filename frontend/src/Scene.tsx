@@ -596,7 +596,16 @@ function ScenePosLayout({
   onDelete: (id: string) => void;
 }) {
   const roots = orbs.filter((o) => o.parent_id === null);
-  const subOrbs = currentOrbId
+  // Sub-orbs of currentOrb appear as floating orbs above the panel
+  // unless the parent's agent_type opts out (code orbs render their
+  // sub-orbs inline in the terminal scrollback, not as 3D orbs).
+  const currentParent = currentOrbId
+    ? orbs.find((o) => o.id === currentOrbId) ?? null
+    : null;
+  const showSubOrbsAbove =
+    !!currentParent &&
+    AGENT_TYPES[currentParent.agent_type ?? 'chat'].spawnsSuborbsAbovePanel;
+  const subOrbs = showSubOrbsAbove
     ? orbs.filter((o) => o.parent_id === currentOrbId)
     : [];
 
