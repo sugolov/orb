@@ -564,7 +564,14 @@ function OrbMesh({
         />
       </mesh>
       <Html center distanceFactor={9} position={[0, 0, 0]} pointerEvents="none">
-        <div className="orb-label-stack" ref={labelRef}>
+        {/* Tooltip on label hover: shows agent type + first line of
+         *  the most recent output. Native title attribute is enough
+         *  for now — proper popovers can come later. */}
+        <div
+          className="orb-label-stack"
+          ref={labelRef}
+          title={tooltipFor(orb)}
+        >
           {orb.display_name && (
             <div className={labelClass}>{orb.display_name}</div>
           )}
@@ -572,6 +579,24 @@ function OrbMesh({
       </Html>
     </group>
   );
+}
+
+function tooltipFor(orb: Orb): string {
+  const def = AGENT_TYPES[orb.agent_type ?? 'chat'];
+  const lines: string[] = [];
+  lines.push(`${orb.display_name || '(unnamed)'} — ${def.label.toLowerCase()}`);
+  if (orb.prompt) {
+    lines.push('');
+    lines.push(`prompt: ${orb.prompt.slice(0, 120)}`);
+  }
+  if (orb.result) {
+    const first = orb.result.split('\n')[0].trim();
+    if (first) {
+      lines.push('');
+      lines.push(`> ${first.slice(0, 160)}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------

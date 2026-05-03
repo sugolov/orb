@@ -23,6 +23,7 @@ import {
 } from 'react';
 import type { Message, Orb } from './api';
 import { sendMessage } from './api';
+import { agentTypeOf } from './agentTypes';
 import type { ScreenPos } from './Scene';
 
 interface SuborbWindowProps {
@@ -338,16 +339,38 @@ export function SuborbWindow({
 
   const liveStream = orb.status === 'working' ? streams.get(orb.id) || '' : '';
 
+  // Per Task 8 polish: small ID dot in the header matches the orb's
+  // agent-type color in 3D, so chat windows on the right edge are
+  // visually traceable back to their orb. The window's left-border
+  // accent also uses the type color when idle/done; the working
+  // pulse stays purple to keep the "thinking" signal universal.
+  const typeDef = agentTypeOf(orb);
+  const dotColor =
+    orb.status === 'failed'
+      ? '#ff6b6b'
+      : orb.status === 'working'
+      ? undefined // let CSS animation drive it
+      : `#${typeDef.color.toString(16).padStart(6, '0')}`;
+
   return (
     <div
       ref={rootElRef}
       className={`suborb-window status-${orb.status} ${orb.pinned ? 'pinned' : ''} ${floating ? 'floating' : ''}`}
+      style={{
+        // type-tinted left border so the window's identity is
+        // immediately readable. Inline so it overrides the .pinned
+        // class's pink border when applicable.
+        ['--type-accent' as string]: typeDef.cssAccent,
+      }}
     >
       <div
         className={`window-header ${dragging ? 'dragging' : ''}`}
         onMouseDown={onHeaderMouseDown}
       >
-        <span className={`window-dot ${orb.status}`} />
+        <span
+          className={`window-dot ${orb.status}`}
+          style={dotColor ? { background: dotColor, boxShadow: `0 0 6px ${dotColor}` } : undefined}
+        />
         <span className="window-name">{orb.display_name || '…'}</span>
         {orb.status === 'working' && (
           <span className="window-status">thinking…</span>
