@@ -28,7 +28,7 @@ The data model + UX semantics from the spec are followed exactly.
 
 ### Task 10 — polish ✓
 
-Two polish items shipped (separate commits per the spec):
+Three polish items shipped (separate commits per the spec):
 
 **10a — docs.** `ARCH.md` got a new "Pluggable architecture"
 section before working principles. Documents the two-registry
@@ -49,6 +49,15 @@ the dispatch input that Tasks 3+4 deferred:
 - ChatOrchestrator + CodeOrchestrator render a styled pill
   dropdown next to the dispatch input. Default = type's first
   non-echo backend. Disabled state for empty catalog.
+
+**10c — slash commands.** ChatOrchestrator now parses leading
+`/code`, `/research`, `/computer`, `/voice`, `/chat` from the
+dispatch input, strips the command, and passes
+`agent_type_override` on the message POST. Spawns a typed sub-orb
+of the override type (with the registry choosing that type's
+preferred backend) — type-switching-at-spawn from PLAN.md Phase G,
+deterministic command form. Agent-driven type dispatch (model
+choosing via spawn_orb tool) still future work.
 
 Things deliberately not done (out of scope for the night):
 - Per-type spawn-pop animation. Existing visScale lerp + working-
