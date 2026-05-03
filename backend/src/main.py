@@ -89,6 +89,24 @@ from a parent orb's chat. A suborb you click into still has kind='suborb'
 even though it's now also functioning as an orchestrator — kind is
 provenance, not current role."""
 
+AgentType = Literal["chat", "code", "research", "computer", "voice"]
+"""Five orchestrator types per the ring-orb-specialization spec.
+
+  chat     — generic conversational dispatcher (default for any orb).
+  code     — Claude-Code-style: bash + file tools, terminal-style UI.
+  research — web search + synthesis, two-pane orchestrator.
+  computer — desktop/browser automation (computer-use), screen stream.
+  voice    — voice-first, mic + transcript orchestrator.
+
+Each ring orb carries an agent_type that drives:
+  - its color (frontend agentTypes.ts registry)
+  - its orchestrator UI (frontend OrchestratorPanel router)
+  - which backend agents are offered when dispatching (backend
+    agents/registry — see Task 4 in overnight.md)
+
+Suborbs inherit their parent's agent_type by default. Type-switching at
+spawn happens later (Task 5 in overnight.md / Phase G in PLAN.md)."""
+
 OrbStatus = Literal["idle", "working", "done", "failed"]
 """idle    — fresh orb, no agent has run for it yet (orchestrators).
 working — a run is in progress (suborb being executed).
@@ -142,6 +160,14 @@ class Orb(BaseModel):
     # specialize orchestrators (e.g. "you are a calendar assistant —
     # always answer with concrete dates"). Null = generic agent.
     instructions: str | None = None
+    # Specialization type. Determines which orchestrator surface opens
+    # and which agent backends are offered when dispatching. Suborbs
+    # inherit from parent at creation time.
+    agent_type: AgentType = "chat"
+    # Type-specific config (working_directory for code, viewport for
+    # computer-use, etc.). Opaque blob — each agent type validates its
+    # own shape. Always serializable as JSON.
+    agent_config: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=_now)
 
 
@@ -212,6 +238,8 @@ class CreateOrb(BaseModel):
     display_name: str = "orb"
     # parent_id is intentionally not exposed here — only the chat endpoint
     # creates suborbs. This endpoint creates user-summoned orchestrators.
+    agent_type: AgentType = "chat"
+    agent_config: dict[str, Any] = Field(default_factory=dict)
 
 
 class PostMessage(BaseModel):
@@ -231,6 +259,11 @@ class PatchOrb(BaseModel):
     # specializes it (e.g. "you are a calendar assistant"). Suborbs
     # spawned underneath inherit it via the agent's walk-up.
     instructions: str | None = None
+    # Convert an orb's specialization type. Mostly used for testing
+    # right now; user-facing UI may eventually let users re-type a
+    # ring orb (e.g. promote a chat orb into a code orb).
+    agent_type: AgentType | None = None
+    agent_config: dict[str, Any] | None = None
 
 
 class CreateMemoryItem(BaseModel):
@@ -747,6 +780,8 @@ async def create_orb(body: CreateOrb) -> Orb:
         parent_id=None,
         kind="orb",
         display_name=body.display_name,
+        agent_type=body.agent_type,
+        agent_config=body.agent_config,
     )
     orbs[orb.id] = orb
     messages_by_orb[orb.id] = []
@@ -936,6 +971,8 @@ async def post_message(orb_id: str, body: PostMessage) -> dict[str, str | None]:
 
     # orchestrator path — spawn a fresh suborb whose prompt is the user's
     # text. display_name left empty until _finalize_run picks one.
+    # Suborbs inherit their parent's agent_type unless explicitly
+    # overridden (Phase G / Task 5: type-switching at spawn).
     suborb = Orb(
         id=_new_id(),
         parent_id=orb_id,
@@ -943,6 +980,8 @@ async def post_message(orb_id: str, body: PostMessage) -> dict[str, str | None]:
         display_name="",
         prompt=content,
         status="working",
+        agent_type=parent.agent_type,
+        agent_config=dict(parent.agent_config),
     )
     orbs[suborb.id] = suborb
     messages_by_orb[suborb.id] = []

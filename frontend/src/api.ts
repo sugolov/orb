@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 export type OrbKind = 'orb' | 'suborb';
 export type OrbStatus = 'idle' | 'working' | 'done' | 'failed';
 export type MemoryKind = 'note' | 'integrated' | 'context';
+export type AgentType = 'chat' | 'code' | 'research' | 'computer' | 'voice';
 
 export interface Orb {
   id: string;
@@ -16,6 +17,9 @@ export interface Orb {
   result: string | null;
   status: OrbStatus;
   pinned: boolean;
+  agent_type: AgentType;
+  agent_config: Record<string, unknown>;
+  instructions?: string | null;
   created_at: string;
 }
 
@@ -88,11 +92,18 @@ export async function listOrbs(): Promise<Orb[]> {
   return r.json();
 }
 
-export async function createOrb(display_name: string, parent_id: string | null = null): Promise<Orb> {
+export async function createOrb(
+  display_name: string,
+  opts: { agent_type?: AgentType; agent_config?: Record<string, unknown> } = {},
+): Promise<Orb> {
   const r = await fetch(`${apiBase}/api/orbs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name, parent_id }),
+    body: JSON.stringify({
+      display_name,
+      agent_type: opts.agent_type ?? 'chat',
+      agent_config: opts.agent_config ?? {},
+    }),
   });
   if (!r.ok) throw new Error(`createOrb ${r.status}`);
   return r.json();
@@ -105,7 +116,7 @@ export async function deleteOrb(id: string): Promise<void> {
 
 export async function patchOrb(
   id: string,
-  body: Partial<Pick<Orb, 'pinned' | 'display_name' | 'parent_id'>>,
+  body: Partial<Pick<Orb, 'pinned' | 'display_name' | 'parent_id' | 'agent_type' | 'agent_config' | 'instructions'>>,
 ): Promise<Orb> {
   const r = await fetch(`${apiBase}/api/orbs/${id}`, {
     method: 'PATCH',
