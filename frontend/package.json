@@ -1,0 +1,9 @@
+{
+  "name": "orb-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Orb shell frontend — see ../ARCH.md",
+  "scripts": {
+    "dev": "npx --yes serve -p 5173 ."
+  }
+}

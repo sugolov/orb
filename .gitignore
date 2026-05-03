@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# uv
+uv.lock
+
+# Node
+node_modules/
+.npm/
+
+# Local DB / state
+*.db
+*.sqlite
+*.sqlite3
+.orb-shell/
+
+# Env
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
