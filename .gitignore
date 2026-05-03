@@ -24,6 +24,12 @@ node_modules/
 .env
 .env.local
 
+# Logs
+*.log
+backend/backend.log
+backend/server.log
+frontend/vite.log
+
 # OS / editor
 .DS_Store
 .vscode/

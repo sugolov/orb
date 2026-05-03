@@ -1,31 +1,38 @@
 # orb-backend
 
-Backend for the orb shell. See [`../ARCH.md`](../ARCH.md) for the full design.
-
-## Setup
-
-```sh
-uv venv
-source .venv/bin/activate
-uv pip install -e ".[dev]"
-```
-
-## Run
-
-```sh
-orb-backend
-# or: uvicorn orb_backend.main:app --reload
-```
-
-Server listens on `http://127.0.0.1:8000`. Health check at `/health`.
+FastAPI backend for the orb shell. Phase 0 — see `../AGENTS.md` for the
+build log and `../ARCH.md` for the project roadmap.
 
 ## Layout
 
 ```
 backend/
-├── pyproject.toml
+├── pyproject.toml      # deps only (no package, no console script)
+├── .env.example
+├── README.md
 └── src/
-    └── orb_backend/
-        ├── __init__.py
-        └── main.py        # FastAPI app — extend per ARCH §4
+    └── main.py         # the entire backend lives here
 ```
+
+## Setup
+
+```sh
+cd backend
+cp .env.example .env             # paste ANTHROPIC_API_KEY (optional in v0)
+uv venv
+uv pip install -r <(uv pip compile pyproject.toml)
+```
+
+## Run
+
+```sh
+.venv/bin/uvicorn --app-dir src main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Or as a script:
+
+```sh
+.venv/bin/python src/main.py
+```
+
+Health: <http://127.0.0.1:8000/health>.

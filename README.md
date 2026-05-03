@@ -1,10 +1,10 @@
 <h1 align="center">orb</h1>
+<h2 align="center"><i>Intelligent Orbs for Wizards</i></h2>
+
 
 <p align="center">
   <img src="images/orb.png" alt="orb" />
 </p>
-
-<p align="center"><i>who up pondering they orb</i></p>
 
 ## Setup
 

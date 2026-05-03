@@ -1,0 +1,1056 @@
+/* Cherry-picked from orb-shell.html. Only the parts in active use. */
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+}
+
+::selection { background: rgba(255, 255, 255, 0.18); }
+
+/* ---------- 3D-anchored label + hover delete (rendered via drei <Html>) ---- */
+.orb-label-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  /* opacity is driven imperatively from useFrame so the label tracks
+   * the orb's visScale (drei <Html> portals to DOM and isn't affected
+   * by the parent group's 3D scale). */
+}
+.orb-label {
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow:
+    0 0 12px rgba(0, 0, 0, 0.95),
+    0 0 4px rgba(0, 0, 0, 0.95);
+  font-weight: 500;
+  white-space: nowrap;
+  user-select: none;
+}
+.orb-label.working {
+  color: rgba(220, 200, 255, 0.95);
+  text-shadow:
+    0 0 12px rgba(0, 0, 0, 0.95),
+    0 0 14px rgba(167, 139, 250, 0.55);
+}
+.orb-delete-btn {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 1px 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+}
+.orb-delete-btn:hover {
+  background: rgba(255, 60, 60, 0.7);
+  border-color: rgba(255, 120, 120, 0.95);
+  color: white;
+  transform: scale(1.15);
+}
+
+/* ---------- suborb windows (top-left stack for transient) ----------- */
+.suborb-windows {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 85;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-height: calc(100vh - 96px); /* leave room for info icon at bottom */
+  /* width is determined by children's intrinsic width (320 by default
+   * with min/max bounds for resize). overflow-y allows scrolling if
+   * many windows; overflow-x hidden to prevent horizontal page scroll. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: calc(100vw - 32px);
+}
+.suborb-window {
+  pointer-events: auto;
+  box-sizing: border-box;
+  width: 320px;
+  min-width: 260px;
+  max-width: min(560px, calc(100vw - 32px));
+  height: 320px;
+  min-height: 200px;
+  max-height: min(80vh, calc(100vh - 32px));
+  background: rgba(10, 8, 16, 0.86);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 1px rgba(167, 139, 250, 0.04),
+    0 0 24px rgba(167, 139, 250, 0.18),
+    0 4px 18px rgba(0, 0, 0, 0.5);
+  color: rgba(220, 200, 255, 0.92);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: windowIn 0.22s ease both;
+  /* drag the bottom-right corner to resize */
+  resize: both;
+}
+.window-msg.live {
+  border-style: dashed;
+  border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(167, 139, 250, 0.06);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: rgba(220, 200, 255, 0.92);
+  align-self: stretch;
+  max-width: 100%;
+}
+/* Pinned windows are absolutely positioned, anchored to their orb's
+ * projected screen pos by SuborbWindow's rAF loop. left/top is the
+ * TOP-LEFT corner — keeping it that way (no transform offset) makes
+ * the drag math straightforward (cursor offset from top-left is the
+ * invariant we maintain). */
+.suborb-window.floating {
+  position: fixed;
+  z-index: 88;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  margin: 0;
+}
+/* For transient windows the user dragged: same fixed positioning so
+ * inline left/top works the same way as for .floating. */
+.suborb-window.dragged {
+  position: fixed;
+  z-index: 86;
+  margin: 0;
+}
+@keyframes windowIn {
+  from { opacity: 0; transform: translateX(8px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0)   scale(1); }
+}
+.suborb-window.pinned {
+  border-color: rgba(232, 121, 249, 0.50);
+  box-shadow:
+    inset 0 0 0 1px rgba(232, 121, 249, 0.06),
+    0 0 24px rgba(232, 121, 249, 0.24),
+    0 0 60px rgba(232, 121, 249, 0.12),
+    0 4px 18px rgba(0, 0, 0, 0.5);
+}
+.suborb-window.status-working {
+  border-color: rgba(196, 168, 245, 0.55);
+}
+.window-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 8px 12px;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.14);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+  min-width: 0;
+}
+.window-header.dragging { cursor: grabbing; }
+.window-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+.window-dot.working {
+  background: rgba(196, 168, 245, 1);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.85);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.window-dot.failed {
+  background: rgba(255, 107, 107, 1);
+  box-shadow: 0 0 8px rgba(255, 107, 107, 0.7);
+}
+.window-name {
+  font-weight: 600;
+  color: white;
+  flex-shrink: 1;
+  flex-grow: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.window-status {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(196, 168, 245, 0.75);
+  flex-shrink: 0;
+}
+.window-spacer { flex: 1; }
+.window-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  height: 22px;
+  border-radius: 100px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0 9px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.window-btn.icon {
+  /* square icon variant for ✕ */
+  width: 22px;
+  padding: 0;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.window-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.window-btn.on {
+  background: rgba(232, 121, 249, 0.22);
+  border-color: rgba(232, 121, 249, 0.55);
+  color: rgba(248, 200, 255, 0.95);
+}
+.window-btn.teal {
+  border-color: rgba(110, 220, 200, 0.40);
+  color: rgba(180, 235, 220, 0.95);
+}
+.window-btn.teal:hover {
+  background: rgba(110, 220, 200, 0.10);
+  border-color: rgba(110, 220, 200, 0.65);
+  color: white;
+  box-shadow: 0 0 14px rgba(110, 220, 200, 0.20);
+}
+
+.window-messages {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  box-sizing: border-box;
+}
+.window-empty {
+  font-size: 10px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.32);
+  padding: 4px 8px;
+}
+.window-live {
+  border: 1px dashed rgba(196, 168, 245, 0.32);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(167, 139, 250, 0.06);
+}
+.live-meta {
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: rgba(196, 168, 245, 0.75);
+  margin-bottom: 4px;
+}
+.live-text {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: rgba(220, 200, 255, 0.92);
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: 84px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 28%, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 28%, black 100%);
+}
+.window-msg {
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  /* break long words / urls so they don't force horizontal overflow */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 90%;
+  min-width: 0;
+  box-sizing: border-box;
+  animation: msgIn 0.25s ease both;
+}
+.window-msg.agent {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+}
+.window-msg.user {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(0, 0, 0, 0.92);
+}
+.window-spawn {
+  border: 1px solid rgba(167, 139, 250, 0.26);
+  background: rgba(167, 139, 250, 0.07);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.window-spawn:hover {
+  background: rgba(167, 139, 250, 0.10);
+  border-color: rgba(167, 139, 250, 0.45);
+}
+.window-spawn.done {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+}
+.window-spawn.failed {
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.06);
+}
+.spawn-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.window-spawn .spawn-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(196, 168, 245, 1);
+  box-shadow: 0 0 6px rgba(167, 139, 250, 0.85);
+}
+.window-spawn .spawn-dot.working {
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.window-spawn .spawn-dot.done {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.4);
+}
+.window-spawn .spawn-name {
+  color: white;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+.window-spawn .spawn-status {
+  margin-left: auto;
+  color: rgba(196, 168, 245, 0.7);
+}
+.window-spawn .spawn-text {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(167, 139, 250, 0.10);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.window-input-row {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(167, 139, 250, 0.14);
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.window-input-row .input-prompt {
+  color: rgba(196, 168, 245, 0.45);
+  font-size: 14px;
+}
+.window-input-row input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 0;
+}
+.window-input-row input::placeholder { color: rgba(255, 255, 255, 0.3); }
+.window-input-row input:disabled { opacity: 0.5; }
+
+/* ---------- pinned summary card (ring-view only) -------------------- */
+/* Read-only summary card per root with pinned suborbs. Anchored to
+ * the root orb's projected screen pos (top-left of orb, slight
+ * overlap). Matches images/image copy.png. Crossfades with the
+ * SuborbWindow as viewT moves between ring (this visible) and agent
+ * (window visible). */
+.pinned-summary {
+  position: fixed;
+  z-index: 84;
+  width: 240px;
+  left: 0;
+  top: 0;
+  padding: 11px 13px 12px;
+  border-radius: 11px;
+  background: linear-gradient(
+    to bottom,
+    rgba(20, 12, 38, 0.88),
+    rgba(10, 6, 22, 0.88)
+  );
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(167, 139, 250, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(167, 139, 250, 0.06),
+    0 0 24px rgba(167, 139, 250, 0.32),
+    0 0 60px rgba(167, 139, 250, 0.14),
+    0 4px 18px rgba(0, 0, 0, 0.5);
+  color: rgba(220, 200, 255, 0.92);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.pinned-summary:hover {
+  transform: scale(1.02);
+  border-color: rgba(196, 168, 245, 0.65);
+  box-shadow:
+    inset 0 0 0 1px rgba(167, 139, 250, 0.10),
+    0 0 32px rgba(167, 139, 250, 0.4),
+    0 0 70px rgba(167, 139, 250, 0.18),
+    0 4px 20px rgba(0, 0, 0, 0.5);
+}
+.ps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(196, 168, 245, 0.95);
+  padding-bottom: 7px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.18);
+}
+.ps-root {
+  font-weight: 600;
+  color: white;
+}
+.ps-count {
+  color: rgba(196, 168, 245, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ps-count.busy::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(196, 168, 245, 1);
+  box-shadow: 0 0 5px rgba(167, 139, 250, 0.9);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.ps-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ps-task + .ps-task {
+  padding-top: 8px;
+  border-top: 1px solid rgba(167, 139, 250, 0.12);
+}
+.ps-task-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  text-transform: none;
+}
+.ps-feed {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  color: rgba(196, 168, 245, 0.72);
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ps-feed-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ps-feed-line.ps-done {
+  color: rgb(220, 200, 255);
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.6);
+}
+.ps-feed-line.ps-failed {
+  color: rgba(255, 150, 150, 0.92);
+}
+.ps-footer {
+  margin-top: 9px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(167, 139, 250, 0.12);
+  font-size: 8px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(196, 168, 245, 0.6);
+}
+.pinned-summary:has(.ps-feed-line.ps-done) .ps-footer {
+  color: rgb(220, 200, 255);
+  font-weight: 600;
+}
+
+/* ---------- orb chart (top-right) ---------- */
+.orb-chart {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 90;
+  width: 240px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px 14px 12px 12px;
+  background: rgba(8, 8, 12, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+.chart-title {
+  font-size: 8px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.chart-node { padding: 1px 0; }
+.chart-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s;
+}
+.chart-row:hover { background: rgba(255, 255, 255, 0.04); }
+.chart-row.current {
+  background: rgba(255, 255, 255, 0.07);
+  color: white;
+}
+.chart-row.current::after {
+  content: '◀';
+  margin-left: auto;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.chart-row.inert {
+  cursor: default;
+  color: rgba(255, 255, 255, 0.55);
+}
+.chart-row.inert:hover { background: transparent; }
+.chart-children {
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+.chart-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px currentColor;
+}
+.chart-dot.orb { background: rgba(255, 255, 255, 0.85); color: rgba(255, 255, 255, 0.4); }
+.chart-dot.suborb-done {
+  background: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.4);
+}
+.chart-dot.working {
+  background: rgb(196, 168, 245);
+  color: rgba(167, 139, 250, 0.7);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.chart-dot.failed {
+  background: rgb(255, 107, 107);
+  color: rgba(255, 107, 107, 0.7);
+}
+.chart-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-pin {
+  font-size: 8px;
+  color: rgba(243, 174, 255, 0.85);
+}
+
+/* ---------- info menu (bottom-left, out of the way of windows) ----- */
+.info-menu {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.info-icon {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 1px;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, box-shadow 0.18s;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.info-menu.open .info-icon {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.55);
+  color: white;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.18);
+}
+.info-body {
+  background: rgba(8, 8, 12, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.7;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+.info-menu.open .info-body {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.info-row b {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 500;
+  margin-right: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+}
+
+/* ---------- orchestrator panel ---------- */
+/* Position & scale are driven inline by Panel.tsx so the panel can grow
+ * out of an orb's screen position and collapse back into it. The
+ * cubic-bezier with overshoot makes the entry/exit feel like a spatial
+ * zoom, not a menu pop. Keep duration in sync with PANEL_TRANSITION_MS. */
+.panel {
+  position: fixed;
+  width: min(760px, 90vw);
+  height: min(440px, 64vh);
+  z-index: 70;
+  border-radius: 22px;
+  background:
+    radial-gradient(ellipse at top, rgba(255, 255, 255, 0.025), transparent 55%),
+    rgba(6, 6, 8, 0.78);
+  backdrop-filter: blur(28px) saturate(120%);
+  -webkit-backdrop-filter: blur(28px) saturate(120%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 60px rgba(255, 255, 255, 0.025),
+    0 0 40px rgba(255, 255, 255, 0.18),
+    0 0 90px rgba(255, 255, 255, 0.10),
+    0 0 180px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: center center;
+  transition:
+    left 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    top 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    transform 0.4s cubic-bezier(0.34, 1.4, 0.64, 1),
+    opacity 0.3s ease;
+}
+
+.panel-header {
+  height: 50px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 18px;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.hbtn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 6px 11px;
+  border-radius: 100px;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.hbtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.hbtn.dismiss {
+  color: rgba(255, 200, 200, 0.7);
+  border-color: rgba(255, 100, 100, 0.25);
+}
+.hbtn.dismiss:hover {
+  color: white;
+  background: rgba(255, 60, 60, 0.4);
+  border-color: rgba(255, 120, 120, 0.7);
+}
+.hbtn.teal {
+  border-color: rgba(110, 220, 200, 0.35);
+  color: rgba(180, 235, 220, 0.95);
+}
+.hbtn.teal:hover {
+  background: rgba(110, 220, 200, 0.10);
+  border-color: rgba(110, 220, 200, 0.6);
+  color: white;
+  box-shadow: 0 0 18px rgba(110, 220, 200, 0.20);
+}
+.hbtn.pinned {
+  background: rgba(232, 121, 249, 0.18);
+  border-color: rgba(232, 121, 249, 0.50);
+  color: rgba(248, 200, 255, 0.95);
+}
+
+/* short flash on the panel when a memory item is merged into the parent */
+.panel.merge-flash {
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 220, 200, 0.45),
+    inset 0 0 80px rgba(120, 220, 200, 0.08),
+    0 0 60px rgba(120, 220, 200, 0.5),
+    0 0 130px rgba(120, 220, 200, 0.25) !important;
+}
+
+.panel-title {
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.crumb       { color: rgba(255, 255, 255, 0.4); font-weight: 400; font-size: 9px; }
+.crumb-current { color: rgba(255, 255, 255, 0.92); }
+.crumb-sep   { color: rgba(255, 255, 255, 0.3); margin: 0 8px; font-size: 10px; }
+
+.panel-status {
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-status::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  animation: pulse 2s ease-in-out infinite;
+}
+.panel-status.busy {
+  color: rgba(196, 168, 245, 0.85);
+}
+.panel-status.busy::before {
+  background: rgba(196, 168, 245, 1);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.8);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.4); }
+}
+
+/* ---------- panel body: 2-column grid (memory | chat) ---------- */
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+.memory-col, .chat-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.memory-col { border-right: 1px solid rgba(255, 255, 255, 0.06); }
+.col-title {
+  padding: 14px 18px 10px;
+  font-size: 9px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.col-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- memory items ---------- */
+.mem-empty {
+  font-size: 11px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.25);
+  padding: 6px 10px;
+}
+.mem-item {
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.7);
+  animation: itemIn 0.3s ease both;
+}
+@keyframes itemIn { from { opacity: 0; transform: translateY(-4px); } }
+.mem-item.inherited {
+  border-color: rgba(167, 139, 250, 0.18);
+  background: rgba(167, 139, 250, 0.025);
+}
+.mem-item.own.integrated {
+  border-color: rgba(110, 220, 200, 0.32);
+  background: rgba(110, 220, 200, 0.05);
+}
+.mem-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(196, 168, 245, 0.6);
+  margin-bottom: 5px;
+}
+.mem-item.own.integrated .mem-meta {
+  color: rgba(160, 230, 220, 0.95);
+}
+.mem-kind {
+}
+.mem-src {
+  margin-left: auto;
+  color: rgba(196, 168, 245, 0.85);
+}
+.mem-prompt {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.mem-text {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* ---------- chat ---------- */
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.msg {
+  max-width: 85%;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  animation: msgIn 0.3s ease both;
+}
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } }
+.msg.agent {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+}
+.msg.agent.dim { color: rgba(255, 255, 255, 0.55); font-style: italic; }
+.msg.user {
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(0, 0, 0, 0.9);
+}
+
+/* ---------- spawn pill ---------- */
+.spawn {
+  align-self: stretch;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  background: rgba(167, 139, 250, 0.06);
+  color: rgba(220, 200, 255, 0.92);
+  animation: msgIn 0.3s ease both;
+  transition: all 0.2s;
+}
+.spawn-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.spawn-name {
+  color: white;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+.spawn-status {
+  margin-left: auto;
+  color: rgba(196, 168, 245, 0.7);
+}
+.spawn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(196, 168, 245, 1);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.9);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.spawn-text {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(167, 139, 250, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.spawn.done {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+.spawn.done:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.07);
+}
+.spawn.done .spawn-dot {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+  animation: none;
+}
+.spawn.done .spawn-status { color: rgba(255, 255, 255, 0.55); }
+.spawn.failed {
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.06);
+  color: rgba(255, 200, 200, 0.92);
+}
+.spawn.failed .spawn-dot {
+  background: rgba(255, 107, 107, 1);
+  box-shadow: 0 0 8px rgba(255, 107, 107, 0.7);
+  animation: none;
+}
+
+/* ---------- input row ---------- */
+.input-row {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.input-prompt {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 16px;
+  font-weight: 300;
+}
+.input-row input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: white;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 4px 0;
+}
+.input-row input::placeholder { color: rgba(255, 255, 255, 0.3); }
+.input-row input:disabled { opacity: 0.5; }
