@@ -26,6 +26,109 @@ The data model + UX semantics from the spec are followed exactly.
 
 (prepended below as tasks complete)
 
+### Task 10 — polish ✓
+
+Two polish items shipped (separate commits per the spec):
+
+**10a — docs.** `ARCH.md` got a new "Pluggable architecture"
+section before working principles. Documents the two-registry
+pattern (frontend agentTypes.ts visuals + backend agents/
+behaviors), the OrchestratorPanel router, AgentBackend interface +
+AgentCallbacks, the registry resolution rules, the dispatcher
+reframe, plus how-to instructions for adding a new agent type and
+adding a new backend within an existing type.
+
+**10b — backend dropdown.** Wires the agent-backend selector on
+the dispatch input that Tasks 3+4 deferred:
+- Backend `PostMessage` gains `backend_id` (explicit per-dispatch
+  backend override, stored in spawned suborb's
+  `agent_config['backend_id']`) + `agent_type_override` (for
+  future slash-command-style typed spawns; UI not yet exposing).
+- `listAgentBackends()` fetcher; App fetches once on mount and
+  passes `backends` through `OrchestratorProps`.
+- ChatOrchestrator + CodeOrchestrator render a styled pill
+  dropdown next to the dispatch input. Default = type's first
+  non-echo backend. Disabled state for empty catalog.
+
+Things deliberately not done (out of scope for the night):
+- Per-type spawn-pop animation. Existing visScale lerp + working-
+  state chaos already covers this acceptably.
+- Slash commands (`/code <prompt>`, `/research <prompt>`). Backend
+  field is ready (`agent_type_override`); UI parsing is a future
+  enhancement.
+- File tree in CodeOrchestrator. Spec lists it as collapsible /
+  default-collapsed; deferred until needed.
+- Memory column toggle in CodeOrchestrator. Same as above.
+- Keyboard tab-order audit. All buttons are real `<button>` elems
+  so tab order is reasonable, but no formal pass.
+
+---
+
+## Final summary
+
+Branch state at end of overnight (10 tasks, ~20 commits):
+
+**Pluggable architecture in place.** Adding a new agent type is a
+five-step recipe documented in ARCH.md. Adding a new backend within
+an existing type is a one-file change. Frontend + backend registries
+are kept in sync by exhaustive switches on the shared `AgentType`
+literal — TypeScript catches missed wire-ups at compile time.
+
+**Five typed ring orbs ship.** Chat (white), Code (cyan), Research
+(amber), Computer (pink), Voice (violet) plus a memory preset (chat
+type, distinct label). Backend seeds these on first launch. Each
+type has a distinct color in 3D + accent through its UI surfaces.
+
+**Five orchestrator surfaces.** Chat (dispatch log + memory column),
+Code (terminal-style scrollback with collapsible CodeBlocks per
+dispatch + structured tool events), Research / Computer / Voice
+(typed placeholder stubs with sketches + dispatch input still
+working through the registry).
+
+**Dispatcher reframe.** Orchestrators don't have their own chat;
+they spawn sub-orbs whose floating chat windows hold the
+conversation. The orchestrator panel's center column is a
+dispatch log of cards/blocks per spawned sub-orb. Per-orchestrator
+agent-backend dropdown lets the user choose which backend handles
+each dispatch.
+
+**Backend registry.** `agents/` module with five registered
+backends:
+- `echo` (always available, used as fallback)
+- `claude-chat` (Anthropic API streaming, available when API key
+  set; default for chat)
+- `claude-code` (subprocess wrapping the `claude` CLI with
+  stream-json parsing; sandboxed per-orb working dir; default for
+  code)
+- `claude-research` (BLOCKED — needs web-search provider; falls
+  back to echo)
+- `claude-computer` (BLOCKED — needs screenshot+input infra;
+  falls back to echo)
+
+Backend instances are cached per orb id; follow-up messages route
+to the same instance preserving in-process state. Deletion calls
+`backend.stop()`.
+
+**What's still owed for full ring-orb specialization:**
+1. Real ResearchOrchestrator (chat + sources panel, real
+   web_search tool wiring).
+2. Real ComputerOrchestrator (screenshot+input pipeline; very infra-
+   heavy).
+3. Real VoiceOrchestrator (Whisper.cpp + TTS).
+4. ClaudeCodeBackend multi-turn (currently each follow-up spawns a
+   fresh subprocess; long-lived interactive session would preserve
+   in-memory CLI state).
+5. Slash-command parsing (`/code`, `/research`, ...) so a chat orb
+   can spawn a typed sub-orb of a different agent_type.
+6. CodeOrchestrator file-tree sidebar + collapsible memory column.
+7. Per-type spawn / done animation polish.
+
+The trace of the system end-to-end works for at least two real
+backends (claude-chat for chat, claude-code for code) plus universal
+echo. Everything else is BLOCKED on infra that's outside an
+overnight scope; it's all wired through the abstraction so each
+real implementation is a localized change.
+
 ### Task 9 — stub research/computer/voice orchestrators ✓
 
 - New `PlaceholderOrchestrator` shared shell + 3 per-type wrappers.
